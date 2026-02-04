@@ -2,3 +2,4 @@ streamlit
 torch
 openai-whisper
 fpdf
+transformers
