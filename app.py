@@ -4,6 +4,7 @@ from Backend.A_STT import transcribe_audio
 from Backend.F_llm import generate_insights
 from Backend.D_pdf_export import generate_pdf
 
+# --- Streamlit page setup ---
 st.set_page_config(layout="wide")
 st.title("📊 AI Meeting Insight Generator")
 
@@ -18,7 +19,7 @@ transcript = st.text_area("Paste transcript", height=300)
 audio_file = st.file_uploader("Upload meeting audio", type=["mp3", "wav", "m4a"])
 
 
-# --- Display helper ---
+# --- Helper to display insights ---
 def display(insights):
     col1, col2 = st.columns(2)
 
@@ -53,19 +54,20 @@ if st.button("Generate Insights"):
             with open(audio_path, "wb") as f:
                 f.write(audio_file.read())
 
-            st.info("Transcribing audio… please wait")
-            transcript = transcribe_audio(audio_path)
+            with st.spinner("Transcribing audio… please wait"):
+                transcript = transcribe_audio(audio_path)
+
             os.remove(audio_path)
 
         if not transcript:
             st.error("No transcript or audio provided")
         else:
-            st.info("Generating insights…")
-            insights = generate_insights(transcript)
+            with st.spinner("Generating insights…"):
+                insights = generate_insights(transcript)
 
-            st.info("Exporting PDF…")
-            pdf_path = "report.pdf"
-            generate_pdf(insights, pdf_path)
+            with st.spinner("Exporting PDF…"):
+                pdf_path = "report.pdf"
+                generate_pdf(insights, pdf_path)
 
             # Show results
             display(insights)
