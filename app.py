@@ -1,17 +1,15 @@
 import streamlit as st
-import requests
-
-API = "http://localhost:8000"
+import os
+from Backend.A_STT import transcribe_audio
+from Backend.F_llm import generate_insights
+from Backend.D_pdf_export import generate_pdf
 
 st.set_page_config(layout="wide")
 st.title("📊 AI Meeting Insight Generator")
 
+# --- Inputs ---
 title = st.text_input("Meeting Title")
-
-meeting_type = st.selectbox(
-    "Meeting Type",
-    ["standup", "planning", "review", "discussion"]
-)
+meeting_type = st.selectbox("Meeting Type", ["standup", "planning", "review", "discussion"])
 
 # Option 1: Paste transcript
 transcript = st.text_area("Paste transcript", height=300)
@@ -20,6 +18,7 @@ transcript = st.text_area("Paste transcript", height=300)
 audio_file = st.file_uploader("Upload meeting audio", type=["mp3", "wav", "m4a"])
 
 
+# --- Display helper ---
 def display(insights):
     col1, col2 = st.columns(2)
 
@@ -44,25 +43,36 @@ def display(insights):
                 st.write(f"• {a}")
 
 
+# --- Main button ---
 if st.button("Generate Insights"):
-    # Always call /process
-    if audio_file is not None:
-        # Send audio file
-        files = {"audio": audio_file}
-        data = {"title": title, "meeting_type": meeting_type}
-        res = requests.post(API + "/process", data=data, files=files)
-    else:
-        # Send transcript text
-        data = {"transcript": transcript, "title": title, "meeting_type": meeting_type}
-        res = requests.post(API + "/process", data=data)
+    try:
+        # If audio uploaded, transcribe it
+        if audio_file is not None:
+            suffix = os.path.splitext(audio_file.name)[-1] or ".mp3"
+            audio_path = f"temp_upload{suffix}"
+            with open(audio_path, "wb") as f:
+                f.write(audio_file.read())
 
-    st.write("Status:", res.status_code)
+            st.info("Transcribing audio… please wait")
+            transcript = transcribe_audio(audio_path)
+            os.remove(audio_path)
 
-    if res.status_code == 200:
-        result = res.json()
-        display(result["insights"])
+        if not transcript:
+            st.error("No transcript or audio provided")
+        else:
+            st.info("Generating insights…")
+            insights = generate_insights(transcript)
 
-        with open(result["pdf_path"], "rb") as f:
-            st.download_button("Download PDF", f, "meeting_report.pdf")
-    else:
-        st.error(res.text)
+            st.info("Exporting PDF…")
+            pdf_path = "report.pdf"
+            generate_pdf(insights, pdf_path)
+
+            # Show results
+            display(insights)
+
+            # Download button
+            with open(pdf_path, "rb") as f:
+                st.download_button("Download PDF", f, "meeting_report.pdf")
+
+    except Exception as e:
+        st.error(f"Error: {e}")
