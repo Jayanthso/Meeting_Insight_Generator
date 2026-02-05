@@ -1,25 +1,28 @@
+# Backend/A_STT.py
+
+import wave
 import numpy as np
-import soundfile as sf
 from transformers import pipeline
 
-# pure python loader (NO ffmpeg)
+# lightweight whisper
 asr = pipeline(
     "automatic-speech-recognition",
-    model="openai/whisper-small",
-    device=-1
+    model="openai/whisper-small"
 )
 
-def transcribe_audio(path):
-    # load audio with soundfile instead of ffmpeg
-    audio, sr = sf.read(path)
 
-    # convert stereo → mono
-    if len(audio.shape) > 1:
-        audio = np.mean(audio, axis=1)
+def transcribe_audio(path: str) -> str:
+    """
+    Works with .wav only
+    No ffmpeg
+    No soundfile
+    100% Streamlit Cloud safe
+    """
 
-    result = asr({
-        "array": audio,
-        "sampling_rate": sr
-    })
+    with wave.open(path, "rb") as wf:
+        frames = wf.readframes(wf.getnframes())
+        audio = np.frombuffer(frames, dtype=np.int16).astype(np.float32) / 32768.0
+        sr = wf.getframerate()
 
+    result = asr({"array": audio, "sampling_rate": sr})
     return result["text"]
