@@ -132,8 +132,9 @@ def display(insights):
 # =========================================================
 # Generate button
 # =========================================================
-if st.button("🚀 Generate Insights", use_container_width=True):
+generate_btn = st.button("🚀 Generate Insights", use_container_width=True)
 
+if generate_btn:
     try:
         # -------- audio -> transcript --------
         if audio_file is not None:
@@ -145,6 +146,10 @@ if st.button("🚀 Generate Insights", use_container_width=True):
 
             with st.spinner("🎙 Transcribing audio..."):
                 transcript = transcribe_audio(tmp)
+            st.success("Transcription complete ✅")
+
+            with st.expander("📜 View Transcript"):
+                st.text_area("Transcript", transcript, height=200)
 
             os.remove(tmp)
 
@@ -155,6 +160,7 @@ if st.button("🚀 Generate Insights", use_container_width=True):
         # -------- NLP --------
         with st.spinner("🧠 Analyzing meeting..."):
             insights = generate_insights(transcript, title, meeting_type)
+        st.success("Insights generated successfully ✅")
 
         # -------- PDF --------
         with st.spinner("📄 Generating PDF report..."):
@@ -174,3 +180,4 @@ if st.button("🚀 Generate Insights", use_container_width=True):
 
     except Exception as e:
         st.error(str(e))
+
