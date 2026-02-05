@@ -44,35 +44,47 @@ def normalize_text(text: str) -> str:
 # =========================================================
 # SUMMARY (LSA extractive — fast + stable)
 # =========================================================
-def summarize(text: str, sentences_count: int = 4) -> str:
+def summarize(text, sentences=4):
     """
-    Extractive summary using Sumy LSA
-    Works better if we summarize only first part of meeting
+    Cleaner extractive summary.
+    Removes very short/noisy lines first.
     """
 
-    lines = text.split("\n")
+    # remove short lines + noise
+    cleaned = "\n".join(
+        l.strip() for l in text.split("\n")
+        if len(l.strip()) > 30
+    )
 
-    # summarize only first 60% (meetings put key info early)
-    partial = "\n".join(lines[: int(len(lines) * 0.6)])
-
-    parser = PlaintextParser.from_string(partial, Tokenizer("english"))
+    parser = PlaintextParser.from_string(cleaned, Tokenizer("english"))
     summarizer = LsaSummarizer()
 
-    summary = summarizer(parser.document, sentences_count)
+    summary = summarizer(parser.document, sentences)
 
-    return " ".join(str(s) for s in summary)
+    result = " ".join(str(s) for s in summary)
+
+    # fallback safety
+    if len(result) < 40:
+        return cleaned[:400]
+
+    return result
 
 
 # =========================================================
 # KEY POINTS
 # =========================================================
-def extract_key_points(text: str, limit: int = 6):
-    lines = [
-        l.strip()
-        for l in text.split("\n")
-        if 40 < len(l.strip()) < 200
-    ]
-    return lines[:limit]
+def extract_key_points(text):
+    seen = set()
+    points = []
+
+    for l in text.split("\n"):
+        l = l.strip()
+        if len(l) > 40 and l not in seen:
+            points.append(l)
+            seen.add(l)
+
+    return points[:6]
+
 
 
 # =========================================================
@@ -105,49 +117,36 @@ def extract_decisions(text: str):
 # returns:
 # [{"task": "...", "owner": "...", "deadline": "..."}]
 # =========================================================
-def extract_actions(text: str):
-    verb_regex = r"\b(start|prepare|draft|deliver|complete|send|update|submit|finish|create|build|test)\b"
-    deadline_regex = r"\b(by|before|on)\s+[A-Za-z0-9 ,]+\b"
-
+def extract_actions(text):
     actions = []
 
+    pattern = r"""
+        ^(?:[A-Z][a-z]+)?      # optional owner
+        [,:]?\s*
+        (.*?\b(?:will|must|should|please|by|prepare|send|deliver|update|start)\b.*)
+    """
+
     for line in text.split("\n"):
-        s = line.strip()
-
-        if not s:
+        line = line.strip()
+        if len(line) < 15:
             continue
 
-        lower = s.lower()
-
-        # must contain action verb
-        if not re.search(verb_regex, lower):
+        m = re.search(pattern, line, re.IGNORECASE | re.VERBOSE)
+        if not m:
             continue
 
-        # -------- owner detection --------
-        owner = "Unassigned"
+        task = m.group(1)
 
-        m = re.match(r"^([A-Z][a-zA-Z]+)", s)
-        if m:
-            owner = m.group(1)
-
-        # -------- deadline detection --------
-        deadline = ""
-        d = re.search(deadline_regex, lower)
-        if d:
-            deadline = d.group(0)
-
-        # remove speaker labels
-        if ":" in s:
-            s = s.split(":", 1)[1].strip()
+        # detect owner
+        owner_match = re.match(r"^([A-Z][a-z]+)", line)
+        owner = owner_match.group(1) if owner_match else "Unassigned"
 
         actions.append({
-            "task": s,
-            "owner": owner,
-            "deadline": deadline
+            "task": task.strip(),
+            "owner": owner
         })
 
-    return actions
-
+    return actions[:10]   # cap noise
 
 # =========================================================
 # UTIL
@@ -198,3 +197,4 @@ def generate_insights(transcript, title="", meeting_type="discussion"):
         "decisions": decisions,
         "action_items": actions
     }
+
