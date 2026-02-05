@@ -1,32 +1,84 @@
-from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, ListFlowable, ListItem
+# =========================================================
+# Professional PDF Export
+# =========================================================
+
+from reportlab.platypus import (
+    SimpleDocTemplate,
+    Paragraph,
+    Spacer,
+    ListFlowable,
+    ListItem
+)
 from reportlab.lib.styles import getSampleStyleSheet
 
-def generate_pdf(data, filename):
+
+def generate_pdf(data, filename, title="Meeting Report"):
 
     doc = SimpleDocTemplate(filename)
     styles = getSampleStyleSheet()
+
     elements = []
 
-    def title(t):
-        elements.append(Spacer(1, 20))
-        elements.append(Paragraph(t, styles["Heading1"]))
+    # -----------------------------------------------------
+    # helpers
+    # -----------------------------------------------------
+    def heading(text):
+        elements.append(Spacer(1, 18))
+        elements.append(Paragraph(text, styles["Heading1"]))
 
     def bullets(items):
-        bullet_items = [
-            ListItem(Paragraph(str(x), styles["BodyText"])) for x in items
-        ]
-        elements.append(ListFlowable(bullet_items))
+        if not items:
+            elements.append(Paragraph("None", styles["BodyText"]))
+            return
 
-    title("Meeting Summary")
+        lst = []
+        for x in items:
+            lst.append(ListItem(Paragraph(str(x), styles["BodyText"])))
+
+        elements.append(ListFlowable(lst, bulletType="bullet"))
+
+    # -----------------------------------------------------
+    # Title
+    # -----------------------------------------------------
+    elements.append(Paragraph(title, styles["Title"]))
+    elements.append(Spacer(1, 20))
+
+    # -----------------------------------------------------
+    # Summary
+    # -----------------------------------------------------
+    heading("Summary")
     elements.append(Paragraph(data["summary"], styles["BodyText"]))
 
-    title("Key Points")
+    # -----------------------------------------------------
+    # Key Points
+    # -----------------------------------------------------
+    heading("Key Points")
     bullets(data["key_points"])
 
-    title("Decisions")
+    # -----------------------------------------------------
+    # Decisions
+    # -----------------------------------------------------
+    heading("Decisions")
     bullets(data["decisions"])
 
-    title("Action Items")
-    bullets(data["action_items"])   # ✅ FIX
+    # -----------------------------------------------------
+    # Action Items
+    # -----------------------------------------------------
+    heading("Action Items")
+
+    actions = []
+
+    for a in data["action_items"]:
+        line = a["task"]
+
+        if a.get("owner"):
+            line += f" — {a['owner']}"
+
+        if a.get("deadline"):
+            line += f" ({a['deadline']})"
+
+        actions.append(line)
+
+    bullets(actions)
 
     doc.build(elements)
