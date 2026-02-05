@@ -1,96 +1,125 @@
 from transformers import pipeline
 import re
 import nltk
-nltk.download('punkt')
-nltk.download('punkt_tab')
+
+# -------------------------------------------------
+# ONE-TIME downloads only (safe)
+# -------------------------------------------------
+try:
+    nltk.data.find("tokenizers/punkt")
+except LookupError:
+    nltk.download("punkt")
+
 
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 
-def summarize(text):
-    parser = PlaintextParser.from_string(text, Tokenizer("english"))
-    summarizer = LsaSummarizer()
-    summary = summarizer(parser.document, 3)  # 3 sentences
-    return " ".join([str(sentence) for sentence in summary])
+
+# =================================================
+# TEXT CLEANING (shared by all extractors)
+# =================================================
+
+def clean_text(text: str) -> str:
+    """Remove speaker labels and noise"""
+    lines = []
+
+    for line in text.split("\n"):
+        line = line.strip()
+
+        if not line:
+            continue
+
+        # remove "Priya (PM):"
+        line = re.sub(r"^[A-Za-z\s]+\([^)]*\):", "", line)
+
+        # remove "Priya:"
+        line = re.sub(r"^[A-Za-z\s]+:", "", line)
+
+        lines.append(line.strip())
+
+    return "\n".join(lines)
 
 
+# =================================================
+# SUMMARY (LSA + fallback)
+# =================================================
 
-# ----------- heuristics -----------
+def summarize(text: str, sentences: int = 4):
+    text = clean_text(text)
+
+    if len(text) < 80:
+        return text
+
+    try:
+        parser = PlaintextParser.from_string(text, Tokenizer("english"))
+        summarizer = LsaSummarizer()
+        summary = summarizer(parser.document, sentences)
+
+        result = " ".join(str(s) for s in summary)
+
+        # fallback if empty
+        if not result.strip():
+            raise ValueError
+
+        return result
+
+    except:
+        # fallback → first few sentences
+        parts = re.split(r'[.!?]', text)
+        return ". ".join(parts[:sentences]).strip()
+
+
+# =================================================
+# ACTION ITEMS (stronger heuristics)
+# =================================================
 
 def extract_actions(text: str):
-    """
-    Returns structured action items:
-    [
-      {"task": "...", "owner": "..."}
-    ]
-    """
+
+    text = clean_text(text)
 
     actions = []
+    seen = set()
 
-    action_keywords = [
-        " will ",
-        " must ",
-        " by ",
-        " start", " starts",
-        " prepare", " prepares",
-        " draft", " drafts",
-        " deliver", " delivers",
-        " escalate",
-        " action item",
+    action_patterns = [
+        r"([A-Z][a-zA-Z]+)\s+(will|must|to|can|should)\s+(.*)",
+        r"([A-Z][a-zA-Z]+),\s*(.*)",
+        r"([A-Z][a-zA-Z]+)['’]s\s+(team\s+)?(.*)",
+    ]
+
+    keywords = [
+        "start", "prepare", "draft", "deliver", "send",
+        "share", "create", "finish", "complete", "update",
+        "escalate", "plan", "review", "test"
     ]
 
     for line in text.split("\n"):
-        sentence = line.strip()
+        l = line.strip()
 
-        if not sentence:
+        if not l:
             continue
 
-        lower = sentence.lower()
+        lower = l.lower()
 
-        # ---------- Step 1: detect action ----------
-        if not any(k in lower for k in action_keywords):
+        if not any(k in lower for k in keywords):
             continue
 
-        original = sentence
+        owner = "Unassigned"
+        task = l
 
-        # ---------- Step 2: remove speaker label ----------
-        if ":" in sentence:
-            sentence = sentence.split(":", 1)[1].strip()
-
-        # ---------- Step 3: extract owner ----------
-        owner = ""
-
-        # Pattern 1 → "Rahul will prepare..."
-        m = re.match(r"^([A-Z][a-zA-Z]+)\s+(will|must|to|can|should|starts?|prepares?|drafts?|delivers?)", sentence)
-        if m:
-            owner = m.group(1)
-
-        # Pattern 2 → "Meera, can you draft..."
-        if not owner:
-            m = re.match(r"^([A-Z][a-zA-Z]+),", sentence)
+        for pat in action_patterns:
+            m = re.match(pat, l)
             if m:
                 owner = m.group(1)
+                task = l.replace(owner, "", 1).strip()
+                break
 
-        # Pattern 3 → "Arjun’s team..."
-        if not owner:
-            m = re.match(r"^([A-Z][a-zA-Z]+)['’]s", sentence)
-            if m:
-                owner = m.group(1)
+        task = re.sub(r"(?i)action item[:\-]?", "", task).strip()
 
-        if not owner:
-            owner = "Unassigned"
-
-        # ---------- Step 4: clean task ----------
-        task = sentence
-
-        # remove "Action item:"
-        task = re.sub(r"(?i)action item[:\-]?", "", task)
-
-        # remove owner name at start
-        task = re.sub(rf"^{owner}\b[,:\s]*", "", task)
-
-        task = task.strip()
+        key = (task, owner)
+        if key in seen:
+            continue
+        seen.add(key)
 
         actions.append({
             "task": task,
@@ -100,28 +129,54 @@ def extract_actions(text: str):
     return actions
 
 
-def extract_decisions(text):
-    keywords = ["decided", "approved", "confirmed", "deadline", "must"]
+# =================================================
+# DECISIONS
+# =================================================
 
-    return [
-        l.strip()
-        for l in text.split("\n")
-        if any(k in l.lower() for k in keywords)
+def extract_decisions(text):
+    text = clean_text(text)
+
+    keywords = [
+        "decided", "approved", "confirmed",
+        "finalized", "deadline", "must"
     ]
 
+    results = []
+
+    for l in text.split("\n"):
+        if any(k in l.lower() for k in keywords):
+            results.append(l.strip())
+
+    return list(dict.fromkeys(results))  # remove duplicates
+
+
+# =================================================
+# KEY POINTS
+# =================================================
 
 def extract_key_points(text):
-    lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 40]
+    text = clean_text(text)
+
+    lines = [
+        l.strip()
+        for l in text.split("\n")
+        if len(l.strip()) > 40
+    ]
+
     return lines[:6]
 
 
-# ----------- main -----------
+# =================================================
+# MAIN ENTRY
+# =================================================
+
 def generate_insights(transcript, title="", meeting_type="discussion"):
 
+    transcript = transcript.strip()
+
     return {
-        "summary": summarize(transcript),
+        "summary": summarize(transcript, 4),
         "key_points": extract_key_points(transcript),
         "decisions": extract_decisions(transcript),
         "action_items": extract_actions(transcript)
     }
-
