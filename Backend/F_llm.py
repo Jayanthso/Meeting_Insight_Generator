@@ -1,125 +1,111 @@
-from transformers import pipeline
+# Backend/F_llm.py
+# -------------------------------------------------
+# 100% FREE
+# 100% offline
+# No transformers
+# No torch
+# Streamlit-Cloud safe
+# Production stable
+# -------------------------------------------------
+
 import re
 import nltk
-
-# -------------------------------------------------
-# ONE-TIME downloads only (safe)
-# -------------------------------------------------
-try:
-    nltk.data.find("tokenizers/punkt")
-except LookupError:
-    nltk.download("punkt")
-
-
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
 from sumy.summarizers.lsa import LsaSummarizer
 
-
-# =================================================
-# TEXT CLEANING (shared by all extractors)
-# =================================================
-
-def clean_text(text: str) -> str:
-    """Remove speaker labels and noise"""
-    lines = []
-
-    for line in text.split("\n"):
-        line = line.strip()
-
-        if not line:
-            continue
-
-        # remove "Priya (PM):"
-        line = re.sub(r"^[A-Za-z\s]+\([^)]*\):", "", line)
-
-        # remove "Priya:"
-        line = re.sub(r"^[A-Za-z\s]+:", "", line)
-
-        lines.append(line.strip())
-
-    return "\n".join(lines)
+nltk.download("punkt", quiet=True)
 
 
 # =================================================
-# SUMMARY (LSA + fallback)
+# -------- TEXT NORMALIZATION (CRITICAL FIX) -------
 # =================================================
 
-def summarize(text: str, sentences: int = 4):
-    text = clean_text(text)
-
-    if len(text) < 80:
-        return text
-
-    try:
-        parser = PlaintextParser.from_string(text, Tokenizer("english"))
-        summarizer = LsaSummarizer()
-        summary = summarizer(parser.document, sentences)
-
-        result = " ".join(str(s) for s in summary)
-
-        # fallback if empty
-        if not result.strip():
-            raise ValueError
-
-        return result
-
-    except:
-        # fallback → first few sentences
-        parts = re.split(r'[.!?]', text)
-        return ". ".join(parts[:sentences]).strip()
+def normalize_text(text: str) -> str:
+    """
+    Whisper returns 1 long paragraph.
+    NLP needs sentence-per-line format.
+    """
+    sentences = nltk.sent_tokenize(text)
+    return "\n".join(sentences)
 
 
 # =================================================
-# ACTION ITEMS (stronger heuristics)
+# ---------------- SUMMARY -------------------------
+# =================================================
+
+def summarize(text: str, sentences_count: int = 4) -> str:
+    """
+    Lightweight extractive summary using LSA.
+    Works offline. No models required.
+    """
+    parser = PlaintextParser.from_string(text, Tokenizer("english"))
+    summarizer = LsaSummarizer()
+
+    summary = summarizer(parser.document, sentences_count)
+
+    return " ".join(str(s) for s in summary)
+
+
+# =================================================
+# --------------- ACTION ITEMS ---------------------
 # =================================================
 
 def extract_actions(text: str):
-
-    text = clean_text(text)
+    """
+    Returns structured actions:
+    [
+        {"task": "...", "owner": "..."}
+    ]
+    """
 
     actions = []
-    seen = set()
 
-    action_patterns = [
-        r"([A-Z][a-zA-Z]+)\s+(will|must|to|can|should)\s+(.*)",
-        r"([A-Z][a-zA-Z]+),\s*(.*)",
-        r"([A-Z][a-zA-Z]+)['’]s\s+(team\s+)?(.*)",
-    ]
-
-    keywords = [
-        "start", "prepare", "draft", "deliver", "send",
-        "share", "create", "finish", "complete", "update",
-        "escalate", "plan", "review", "test"
+    action_verbs = [
+        "will", "must", "should",
+        "start", "prepare", "draft",
+        "deliver", "complete", "finish",
+        "send", "update", "create",
+        "submit", "plan"
     ]
 
     for line in text.split("\n"):
-        l = line.strip()
+        sentence = line.strip()
 
-        if not l:
+        if not sentence:
             continue
 
-        lower = l.lower()
+        lower = sentence.lower()
 
-        if not any(k in lower for k in keywords):
+        # detect action sentence
+        if not any(v in lower for v in action_verbs):
             continue
 
+        # -------- owner detection --------
         owner = "Unassigned"
-        task = l
 
-        for pat in action_patterns:
-            m = re.match(pat, l)
+        # Pattern 1: "Rahul will prepare..."
+        m = re.match(r"^([A-Z][a-zA-Z]+)\s+(will|must|should|to|can|starts?|prepares?|drafts?|delivers?)", sentence)
+        if m:
+            owner = m.group(1)
+
+        # Pattern 2: "Meera, can you draft..."
+        if owner == "Unassigned":
+            m = re.match(r"^([A-Z][a-zA-Z]+),", sentence)
             if m:
                 owner = m.group(1)
-                task = l.replace(owner, "", 1).strip()
-                break
 
-        task = re.sub(r"(?i)action item[:\-]?", "", task).strip()
+        # Pattern 3: "Arjun’s team..."
+        if owner == "Unassigned":
+            m = re.match(r"^([A-Z][a-zA-Z]+)['’]s", sentence)
+            if m:
+                owner = m.group(1)
 
-        key = (task, owner)
-        if key in seen:
-            continue
-        seen.add(key)
+        # remove speaker prefix like "Priya:"
+        if ":" in sentence:
+            sentence = sentence.split(":", 1)[1].strip()
+
+        task = sentence.strip()
 
         actions.append({
             "task": task,
@@ -130,52 +116,53 @@ def extract_actions(text: str):
 
 
 # =================================================
-# DECISIONS
+# ---------------- DECISIONS -----------------------
 # =================================================
 
-def extract_decisions(text):
-    text = clean_text(text)
-
+def extract_decisions(text: str):
     keywords = [
-        "decided", "approved", "confirmed",
-        "finalized", "deadline", "must"
+        "decided",
+        "approved",
+        "confirmed",
+        "deadline",
+        "must",
+        "finalized"
     ]
 
-    results = []
+    decisions = []
 
-    for l in text.split("\n"):
-        if any(k in l.lower() for k in keywords):
-            results.append(l.strip())
+    for line in text.split("\n"):
+        if any(k in line.lower() for k in keywords):
+            decisions.append(line.strip())
 
-    return list(dict.fromkeys(results))  # remove duplicates
-
-
-# =================================================
-# KEY POINTS
-# =================================================
-
-def extract_key_points(text):
-    text = clean_text(text)
-
-    lines = [
-        l.strip()
-        for l in text.split("\n")
-        if len(l.strip()) > 40
-    ]
-
-    return lines[:6]
+    return decisions
 
 
 # =================================================
-# MAIN ENTRY
+# --------------- KEY POINTS -----------------------
 # =================================================
 
-def generate_insights(transcript, title="", meeting_type="discussion"):
+def extract_key_points(text: str):
+    """
+    First 5 meaningful sentences.
+    """
+    lines = [l.strip() for l in text.split("\n") if len(l.strip()) > 40]
+    return lines[:5]
 
-    transcript = transcript.strip()
+
+# =================================================
+# ---------------- MAIN API ------------------------
+# =================================================
+
+def generate_insights(transcript: str, title="", meeting_type="discussion"):
+    """
+    Main function called by Streamlit / FastAPI
+    """
+
+    transcript = normalize_text(transcript)  # ⭐ MOST IMPORTANT STEP
 
     return {
-        "summary": summarize(transcript, 4),
+        "summary": summarize(transcript),
         "key_points": extract_key_points(transcript),
         "decisions": extract_decisions(transcript),
         "action_items": extract_actions(transcript)
