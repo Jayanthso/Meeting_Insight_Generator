@@ -6,7 +6,7 @@ nltk
 reportlab
 pydub
 openai-whisper
-ffmpeg-python
+ffmpeg
 numpy
 soundfile
 sentencepiece
