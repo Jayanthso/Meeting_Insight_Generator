@@ -7,3 +7,7 @@ reportlab
 pydub
 openai-whisper
 ffmpeg-python
+numpy
+soundfile
+sentencepiece
+accelerate
