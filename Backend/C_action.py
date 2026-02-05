@@ -1,25 +1,32 @@
 import re
 
-TASK_PATTERNS = [
-    r"(assign .* to \w+)",
-    r"(follow up .*?)",
-    r"(prepare .*?)",
-    r"(update .*?)",
-    r"(fix .*?)",
-    r"(deploy .*?)",
-    r"(complete .*?)",
-    r"(review .*?)",
-]
+def extract_actions(text):
+    action_verbs = [
+        "will",
+        "start", "starts", "starting",
+        "prepare", "prepares",
+        "draft", "drafts",
+        "deliver", "delivers",
+        "send", "sends",
+        "complete", "completes",
+        "escalate", "esclate",
+        "follow up", "follow-up",
+        "must",
+        "need to",
+        "action"
+    ]
 
-def regex_action_items(text):
+    actions = []
 
-    items = []
+    for line in text.split("\n"):
+        clean = line.strip()
 
-    for p in TASK_PATTERNS:
-        for m in re.findall(p, text, flags=re.IGNORECASE):
-            items.append({
-                "task": m,
-                "owner": "Unassigned"
-            })
+        if not clean:
+            continue
 
-    return items
+        lower = clean.lower()
+
+        if any(v in lower for v in action_verbs):
+            actions.append(clean)
+
+    return actions
