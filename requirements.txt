@@ -1,6 +1,9 @@
 streamlit
-torch
-openai-whisper
-fpdf
 transformers
+torch
+sumy
 nltk
+reportlab
+pydub
+openai-whisper
+ffmpeg-python
