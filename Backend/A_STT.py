@@ -1,7 +1,11 @@
-import whisper
+from transformers import pipeline
 
-model = whisper.load_model("base")
+asr = pipeline(
+    "automatic-speech-recognition",
+    model="openai/whisper-small",
+    device=-1
+)
 
-def transcribe_audio(path: str):
-    result = model.transcribe(path)
+def transcribe_audio(path):
+    result = asr(path)
     return result["text"]
