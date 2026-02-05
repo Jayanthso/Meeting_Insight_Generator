@@ -16,7 +16,7 @@ meeting_type = st.selectbox("Meeting Type", ["standup", "planning", "review", "d
 transcript = st.text_area("Paste transcript", height=300)
 
 # Option 2: Upload audio file
-audio_file = st.file_uploader("Upload meeting audio", type=["mp3", "wav", "m4a"])
+audio_file = st.file_uploader("Upload meeting audio", type=["wav"])
 
 
 # --- Helper to display insights ---
@@ -78,3 +78,4 @@ if st.button("Generate Insights"):
 
     except Exception as e:
         st.error(f"Error: {e}")
+
