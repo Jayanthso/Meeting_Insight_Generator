@@ -1,0 +1,13 @@
+streamlit
+transformers
+torchaudio
+sumy
+nltk
+reportlab
+pydub
+openai-whisper
+ffmpeg
+numpy
+soundfile
+sentencepiece
+accelerate
