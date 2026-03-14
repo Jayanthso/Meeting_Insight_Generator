@@ -7,6 +7,8 @@
 
 import re
 import nltk
+nltk.download('punkt')
+nltk.download('punkt_tab')
 
 from sumy.parsers.plaintext import PlaintextParser
 from sumy.nlp.tokenizers import Tokenizer
